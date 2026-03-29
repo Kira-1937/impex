@@ -1,0 +1,77 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "Stores user information including roles and location.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "The unique user ID from Firebase Auth." },
+        "email": { "type": "string", "format": "email", "description": "User's email address." },
+        "displayName": { "type": "string", "description": "User's full name." },
+        "role": { "type": "string", "enum": ["buyer", "seller", "admin"], "description": "User's role on the platform." },
+        "country": { "type": "string", "description": "User's country of residence." },
+        "address": { "type": "object", "description": "User's shipping/business address." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "When the profile was created." },
+        "isVerified": { "type": "boolean", "description": "Whether the seller is verified." }
+      },
+      "required": ["uid", "email", "role", "createdAt"]
+    },
+    "Product": {
+      "title": "Product",
+      "description": "A product listed by a seller.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique product ID." },
+        "sellerId": { "type": "string", "description": "UID of the seller." },
+        "name": { "type": "string", "description": "Product name." },
+        "description": { "type": "string", "description": "Product description." },
+        "price": { "type": "number", "description": "Price in USD." },
+        "category": { "type": "string", "description": "Product category." },
+        "images": { "type": "array", "items": { "type": "string" }, "description": "URLs of product images." },
+        "stock": { "type": "integer", "description": "Current stock level." },
+        "minExportQty": { "type": "integer", "description": "Minimum quantity for export." },
+        "weight": { "type": "number", "description": "Weight in kg." },
+        "hsCode": { "type": "string", "description": "Harmonized System code for export." }
+      },
+      "required": ["sellerId", "name", "price", "stock"]
+    },
+    "PurchaseGroup": {
+      "title": "Purchase Group",
+      "description": "A group of buyers collaborating for a single shipment.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique group ID." },
+        "destinationCountry": { "type": "string", "description": "Target country for the shipment." },
+        "status": { "type": "string", "enum": ["open", "locked", "shipped", "completed"], "description": "Current status of the group." },
+        "currentWeight": { "type": "number", "description": "Current total weight of orders in the group." },
+        "targetWeight": { "type": "number", "description": "Target weight for shipping optimization." },
+        "members": { "type": "array", "items": { "type": "string" }, "description": "List of buyer UIDs." },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "estimatedShippingDate": { "type": "string", "format": "date-time" }
+      },
+      "required": ["destinationCountry", "status", "createdAt"]
+    },
+    "Order": {
+      "title": "Order",
+      "description": "An order placed by a buyer.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "buyerId": { "type": "string" },
+        "productId": { "type": "string" },
+        "groupId": { "type": "string" },
+        "quantity": { "type": "integer" },
+        "totalPrice": { "type": "number" },
+        "status": { "type": "string", "enum": ["pending", "paid", "consolidated", "shipped", "delivered"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["buyerId", "productId", "quantity", "totalPrice", "status", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": { "schema": "UserProfile", "description": "User profiles." },
+    "/products/{productId}": { "schema": "Product", "description": "Product listings." },
+    "/groups/{groupId}": { "schema": "PurchaseGroup", "description": "Collaborative purchase groups." },
+    "/orders/{orderId}": { "schema": "Order", "description": "Individual orders." }
+  }
+}

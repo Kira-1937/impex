@@ -1,0 +1,9 @@
+{
+  "name": "Impex",
+  "description": "A global marketplace connecting international buyers with Indian sellers, featuring collaborative buying to reduce shipping costs and AI-powered export guidance.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone",
+    "geolocation"
+  ]
+}

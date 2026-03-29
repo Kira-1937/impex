@@ -1,0 +1,163 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: userId (UID)
+    // Fields:
+    //   - uid: string (required)
+    //   - email: string (required, email format)
+    //   - displayName: string (optional)
+    //   - role: string (required, enum: buyer, seller, admin)
+    //   - country: string (optional)
+    //   - address: map (optional)
+    //   - createdAt: timestamp (required)
+    //   - isVerified: bool (optional)
+    //
+    // Collection: products
+    // Document ID: productId
+    // Fields:
+    //   - sellerId: string (required)
+    //   - name: string (required, size 1-100)
+    //   - description: string (required, size 1-2000)
+    //   - price: number (required, positive)
+    //   - category: string (required)
+    //   - images: list (required, max 10)
+    //   - stock: int (required, non-negative)
+    //   - minExportQty: int (required, positive)
+    //   - weight: number (required, positive)
+    //   - hsCode: string (optional)
+    //
+    // Collection: groups
+    // Document ID: groupId
+    // Fields:
+    //   - destinationCountry: string (required)
+    //   - status: string (required, enum: open, locked, shipped, completed)
+    //   - currentWeight: number (required)
+    //   - targetWeight: number (required)
+    //   - members: list (required, max 100)
+    //   - createdAt: timestamp (required)
+    //
+    // Collection: orders
+    // Document ID: orderId
+    // Fields:
+    //   - buyerId: string (required)
+    //   - productId: string (required)
+    //   - groupId: string (optional)
+    //   - quantity: int (required, positive)
+    //   - totalPrice: number (required, positive)
+    //   - status: string (required, enum: pending, paid, consolidated, shipped, delivered)
+    //   - createdAt: timestamp (required)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && 
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+         (request.auth.token.email == "vikramaryasaharan@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    function isSeller() {
+      return isAuthenticated() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'seller';
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidUser(data) {
+      return hasRequiredFields(['uid', 'email', 'role', 'createdAt']) &&
+             data.uid == request.auth.uid &&
+             isValidEmail(data.email) &&
+             data.role in ['buyer', 'seller', 'admin'] &&
+             (data.role != 'admin' || isAdmin()); // Prevent self-promoting to admin
+    }
+
+    function isValidProduct(data) {
+      return hasRequiredFields(['sellerId', 'name', 'description', 'price', 'category', 'images', 'stock', 'minExportQty', 'weight']) &&
+             data.sellerId == request.auth.uid &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
+             data.description is string && data.description.size() <= 2000 &&
+             data.price is number && data.price > 0 &&
+             data.images is list && data.images.size() <= 10 &&
+             data.stock is int && data.stock >= 0 &&
+             data.minExportQty is int && data.minExportQty > 0 &&
+             data.weight is number && data.weight > 0;
+    }
+
+    function isValidOrder(data) {
+      return hasRequiredFields(['buyerId', 'productId', 'quantity', 'totalPrice', 'status', 'createdAt']) &&
+             data.buyerId == request.auth.uid &&
+             data.quantity is int && data.quantity > 0 &&
+             data.totalPrice is number && data.totalPrice > 0 &&
+             data.status in ['pending', 'paid', 'consolidated', 'shipped', 'delivered'];
+    }
+
+    function isValidGroup(data) {
+      return hasRequiredFields(['destinationCountry', 'status', 'currentWeight', 'targetWeight', 'members', 'createdAt']) &&
+             data.status in ['open', 'locked', 'shipped', 'completed'] &&
+             data.members is list && data.members.size() <= 100;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isAuthenticated(); // Allow users to see other profiles (needed for marketplace trust)
+      allow create: if isOwner(userId) && isValidUser(request.resource.data);
+      allow update: if (isOwner(userId) && isValidUser(request.resource.data) && request.resource.data.role == resource.data.role) || isAdmin();
+    }
+
+    match /products/{productId} {
+      allow read: if true; // Publicly searchable
+      allow create: if isSeller() && isValidProduct(request.resource.data);
+      allow update: if (isAuthenticated() && resource.data.sellerId == request.auth.uid && isValidProduct(request.resource.data)) || isAdmin();
+      allow delete: if (isAuthenticated() && resource.data.sellerId == request.auth.uid) || isAdmin();
+    }
+
+    match /groups/{groupId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidGroup(request.resource.data);
+      allow update: if isAuthenticated() && isValidGroup(request.resource.data); // Logic for joining groups
+      allow delete: if isAdmin();
+    }
+
+    match /orders/{orderId} {
+      allow read: if isAuthenticated() && (resource.data.buyerId == request.auth.uid || 
+                                          get(/databases/$(database)/documents/products/$(resource.data.productId)).data.sellerId == request.auth.uid ||
+                                          isAdmin());
+      allow create: if isAuthenticated() && isValidOrder(request.resource.data);
+      allow update: if (isAuthenticated() && (resource.data.buyerId == request.auth.uid || 
+                                             get(/databases/$(database)/documents/products/$(resource.data.productId)).data.sellerId == request.auth.uid) && 
+                       isValidOrder(request.resource.data)) || isAdmin();
+    }
+  }
+}
